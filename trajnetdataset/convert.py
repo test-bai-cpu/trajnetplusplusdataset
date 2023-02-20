@@ -39,6 +39,24 @@ def mot(sc, input_file):
             .cache())
 
 
+def edinburgh_mydsfile(sc, input_file):
+    print('processing ' + input_file)
+    return (sc
+            .wholeTextFiles(input_file)
+            .zipWithIndex()
+            .flatMap(readers.edinburgh_mydsfile)
+            .cache())
+
+
+def edinburgh_myedinfile(sc, input_file):
+    print('processing ' + input_file)
+    return (sc
+            .wholeTextFiles(input_file)
+            .zipWithIndex()
+            .flatMap(readers.edinburgh_myedinfile)
+            .cache())
+
+
 def edinburgh(sc, input_file):
     print('processing ' + input_file)
     return (sc
@@ -111,7 +129,7 @@ def standard(sc, input_file):
 def write(input_rows, output_file, args):
     """ Write Valid Scenes without categorization """
 
-    print(" Entering Writing ")
+    print(" Entering Writing ", args.order_frames)
     ## To handle two different time stamps 7:00 and 17:00 of cff
     if args.order_frames:
         frames = sorted(set(input_rows.map(lambda r: r.frame).toLocalIterator()),
@@ -130,6 +148,13 @@ def write(input_rows, output_file, args):
     train_rows = input_rows.filter(lambda r: r.frame in train_frames)
     train_output = output_file.format(split='train')
     train_scenes = Scenes(fps=args.fps, start_scene_id=0, args=args).rows_to_file(train_rows, train_output)
+
+
+## Todo: 把这个start scene id 都设置为零，看看结果有没有改变。理论上test的数据处理是没有任何变化的。确实没有任何变化。。
+## 结果是在test里面，对于scene后面的track，每个人比较短，但是在train,val,test_private中，每个人比较长。现在看一下为什么。是因为
+## test的只给大家看observe的部分，不给大家看之后的部分。
+
+## 同样，所以在生成test文件夹中的文件的时候，会把train和val中的都清空，因为他们的row都是零
 
     # validation dataset
     val_rows = input_rows.filter(lambda r: r.frame in val_frames)
@@ -183,9 +208,9 @@ def edit_goal_file(old_filename, new_filename):
     shutil.copy("goal_files/val/" + old_filename, "goal_files/val/" + new_filename)
     shutil.copy("goal_files/test_private/" + old_filename, "goal_files/test_private/" + new_filename)
 
-def main():
+def main_example():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--obs_len', type=int, default=9,
+    parser.add_argument('--obs_len', type=int, default=8,
                         help='Length of observation')
     parser.add_argument('--pred_len', type=int, default=12,
                         help='Length of prediction')
@@ -318,6 +343,102 @@ def main():
           'output_pre/{split}/biwi_eth.ndjson', args)
     categorize(sc, 'output_pre/{split}/biwi_eth.ndjson', args)
 
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--obs_len', type=int, default=8,
+                        help='Length of observation')
+    parser.add_argument('--pred_len', type=int, default=12,
+                        help='Length of prediction')
+    parser.add_argument('--train_fraction', default=0.6, type=float,
+                        help='Training set fraction')
+    parser.add_argument('--val_fraction', default=0.2, type=float,
+                        help='Validation set fraction')
+    parser.add_argument('--fps', default=2.5, type=float,
+                        help='fps')
+    parser.add_argument('--order_frames', action='store_true',
+                        help='For CFF')
+    parser.add_argument('--chunk_stride', type=int, default=2,
+                        help='Sampling Stride')
+    parser.add_argument('--min_length', default=0.0, type=float,
+                        help='Min Length of Primary Trajectory')
+    parser.add_argument('--synthetic', action='store_true',
+                        help='convert synthetic datasets (if false, convert real)')
+    parser.add_argument('--all_present', action='store_true',
+                        help='filter scenes where all pedestrians present at all times')
+    parser.add_argument('--goal_file', default=None,
+                        help='Pkl file for goals (required for ORCA sensitive scene filtering)')
+    parser.add_argument('--mode', default='default', choices=('default', 'trajnet'),
+                        help='mode of ORCA scene generation (required for ORCA sensitive scene filtering)')
+
+    ## For Trajectory categorizing and filtering
+    categorizers = parser.add_argument_group('categorizers')
+    categorizers.add_argument('--static_threshold', type=float, default=1.0,
+                              help='Type I static threshold')
+    categorizers.add_argument('--linear_threshold', type=float, default=0.5,
+                              help='Type II linear threshold (0.3 for Synthetic)')
+    categorizers.add_argument('--inter_dist_thresh', type=float, default=5,
+                              help='Type IIId distance threshold for cone')
+    categorizers.add_argument('--inter_pos_range', type=float, default=15,
+                              help='Type IIId angle threshold for cone (degrees)')
+    categorizers.add_argument('--grp_dist_thresh', type=float, default=0.8,
+                              help='Type IIIc distance threshold for group')
+    categorizers.add_argument('--grp_std_thresh', type=float, default=0.2,
+                              help='Type IIIc std deviation for group')
+    categorizers.add_argument('--acceptance', nargs='+', type=float, default=[0.1, 1, 1, 1],
+                              help='acceptance ratio of different trajectory (I, II, III, IV) types')
+
+    args = parser.parse_args()
+    sc = pysparkling.Context()
+
+    # Real datasets conversion (eg. ETH)
+    #########################
+    ## Training Set
+    #########################
+    args.train_fraction = 1.0
+    args.val_fraction = 0.0
+
+    ## edinburgh
+    write(edinburgh_myedinfile(sc, 'data/edinburgh/0922.csv'),
+          'output_pre/{split}/0922.ndjson', args)
+    categorize(sc, 'output_pre/{split}/0922.ndjson', args)
+
+    write(edinburgh_myedinfile(sc, 'data/edinburgh/0923.csv'),
+          'output_pre/{split}/0923.ndjson', args)
+    categorize(sc, 'output_pre/{split}/0923.ndjson', args)
+
+
+
+#     #########################
+#     ## Validation Set
+#     #########################
+    args.train_fraction = 0.0
+    args.val_fraction = 1.0
+
+    write(edinburgh_myedinfile(sc, 'data/edinburgh/0922.csv'),
+          'output_pre/{split}/0922.ndjson', args)
+    categorize(sc, 'output_pre/{split}/0922.ndjson', args)
+
+    write(edinburgh_myedinfile(sc, 'data/edinburgh/0923.csv'),
+          'output_pre/{split}/0923.ndjson', args)
+    categorize(sc, 'output_pre/{split}/0923.ndjson', args)
+
+#     #########################
+#     ## Testing Set
+#     #########################
+    args.train_fraction = 0.0
+    args.val_fraction = 0.0
+    # here means not use type I data for training and val, but can use them for test.
+    args.acceptance = [1.0, 1.0, 1.0, 1.0]
+    args.chunk_stride = 2
+
+    write(edinburgh_myedinfile(sc, 'data/edinburgh/0922.csv'),
+          'output_pre/{split}/0922.ndjson', args)
+    categorize(sc, 'output_pre/{split}/0922.ndjson', args)
+
+    write(edinburgh_myedinfile(sc, 'data/edinburgh/0923.csv'),
+          'output_pre/{split}/0923.ndjson', args)
+    categorize(sc, 'output_pre/{split}/0923.ndjson', args)
 
 if __name__ == '__main__':
     main()

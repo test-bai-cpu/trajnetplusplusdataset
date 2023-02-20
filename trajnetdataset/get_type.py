@@ -1,5 +1,5 @@
 """ Categorization of Primary Pedestrian """
-
+import os
 import numpy as np
 import pysparkling
 
@@ -47,6 +47,14 @@ def get_type(scene, args):
     mult_tag = []
     sub_tag = []
 
+    # print(scene[0][0], scene[0][0].pedestrian, type(scene[0][0].pedestrian))
+    # if scene[0][0].pedestrian in [1129, 1130, 1131, 1132, 1133]:
+    # print("---------------------------")
+    # print("length is: ", len(scene))
+    # for che_1 in range(len(scene)):
+    #     print("######")
+    #     print(scene[che_1])
+
     # Static
     if euclidean_distance(scene[0][0], scene[0][-1]) < args.static_threshold:
         mult_tag.append(1)
@@ -93,7 +101,7 @@ def add_noise(observation):
     observation += np.random.uniform(-thresh, thresh, observation.shape)
     return observation
 
-def orca_validity(scene, goals, pred_len=12, obs_len=9, mode='trajnet', iters=15):
+def orca_validity(scene, goals, pred_len=12, obs_len=8, mode='trajnet', iters=15):
     '''
     Check ORCA can reconstruct scene on rounding (To clean in future)
     '''
@@ -128,6 +136,12 @@ def write(rows, path, new_scenes, new_frames):
     output_path = path.replace('output_pre', 'output')
     pysp_tracks = rows.filter(lambda r: r.frame in new_frames).map(trajnetplusplustools.writers.trajnet)
     pysp_scenes = pysparkling.Context().parallelize(new_scenes).map(trajnetplusplustools.writers.trajnet)
+
+    ## removes the file, if previously generated
+    if os.path.isfile(output_path):
+        print("now is removing for output: ", output_path)
+        os.remove(output_path)
+
     pysp_scenes.union(pysp_tracks).saveAsTextFile(output_path)
 
 def trajectory_type(rows, path, fps, track_id=0, args=None):
@@ -194,21 +208,26 @@ def trajectory_type(rows, path, fps, track_id=0, args=None):
 
         # ## Consider only those scenes where all pedestrians are present
         # # Note: Different from removing incomplete trajectories
-        if args.all_present and (not all_ped_present(scene)):
-            continue
+        # if args.all_present and (not all_ped_present(scene)):
+        #     continue
 
         ## Get Tag
         tag, mult_tag, sub_tag = get_type(scene, args)
-
-        if np.random.uniform() < args.acceptance[tag - 1]:
+        # print(args.acceptance)
+        # if np.random.uniform() < args.acceptance[tag - 1]:
+        #     print("correct: ", tag, mult_tag, sub_tag)
+        # else:
+        #     print("wrong: ", tag, mult_tag, sub_tag)
+        # if np.random.uniform() < args.acceptance[tag - 1]:
+        if True:
             ## Check Validity
             ## Used in ORCA Datasets to account for rounding sensitivity
             if orca_sensitivity:
                 goals = [goal_dict[path[0].pedestrian] for path in scene]
                 # print('Type III')
-                if orca_validity(scene, goals, args.pred_len, args.obs_len, args.mode):
-                    col_count += 1
-                    continue
+                # if orca_validity(scene, goals, args.pred_len, args.obs_len, args.mode):
+                #     col_count += 1
+                #     continue
 
             ## Update Tags
             tags[tag].append(track_id)

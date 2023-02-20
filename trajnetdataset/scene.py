@@ -47,6 +47,7 @@ class Scenes(object):
         # if not ok:
         #     print('!!!!!!!!! DETECTED GAP IN FRAMES')
         #     print(increments)
+        #     print(frames)
 
         return ok
 
@@ -80,14 +81,22 @@ class Scenes(object):
             .filter(lambda ped_frames: self.continuous_frames(ped_frames[1]))
 
             # filter for scenes that have some activity
-            .filter(lambda ped_frames:
-                    sum(count_by_frame[f] for f in ped_frames[1]) >= 2.0 * self.chunk_size)
+            # .filter(lambda ped_frames:
+            #         sum(count_by_frame[f] for f in ped_frames[1]) >= 2.0 * self.chunk_size)
 
             # require some proximity to other pedestrians
+            # Modification: only check proximity when there are more than one pedestrian in the scene
             .filter(lambda ped_frames:
+                    not(
+                    sum(count_by_frame[f] for f in ped_frames[1]) >= 2.0 * self.chunk_size
+                    and
+                    not(
                     ped_frames[0] in {p
                                       for frame in ped_frames[1]
-                                      for p in occupancy_by_frame[frame]})
+                                      for p in occupancy_by_frame[frame]}              
+                    )
+                    )
+                    )
 
             .cache()
         )
@@ -103,6 +112,7 @@ class Scenes(object):
 
 
     def rows_to_file(self, rows, output_file):
+        ## 这里是为什么test 的长度和train中不一样。因为test的只给大家看observe的部分，不给大家看之后的部分。
         if '/test/' in output_file:
             self.visible_chunk = self.obs_len
         else:
@@ -113,6 +123,7 @@ class Scenes(object):
 
         ## removes the file, if previously generated
         if os.path.isfile(output_file):
+            print("now is removing for output_pre: ", output_file)
             os.remove(output_file)
 
         ## write scenes and tracks

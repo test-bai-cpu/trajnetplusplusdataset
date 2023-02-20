@@ -136,6 +136,48 @@ def edinburgh(filename_content_index):
             yield TrackRow(frame, track_id, float(x) * 0.0247, float(y) * 0.0247)
 
 
+def edinburgh_myedinfile(filename_content_index):
+    """Edinburgh Informatics Forum data reader.
+
+    Original frame rate is 9fps.
+    Every pixel corresponds to 24.7mm.
+    http://homepages.inf.ed.ac.uk/rbf/FORUMTRACKING/
+    """
+    (_, whole_file), index = filename_content_index
+
+    for line in whole_file.splitlines():
+        line = line.split(",")
+        track_id = line[1]
+        track_id = int(track_id) + index * 1000000
+
+        x = line[2]
+        y = line[3]
+        frame = int(line[0]) + index * 1000000
+        if frame % 3 != 0:  # downsample frame rate
+            continue
+        yield TrackRow(frame, track_id, float(x) * 0.0247, float(y) * 0.0247)
+
+
+def edinburgh_mydsfile(filename_content_index):
+    """Edinburgh Informatics Forum data reader.
+
+    Original frame rate is 9fps.
+    Every pixel corresponds to 24.7mm.
+    http://homepages.inf.ed.ac.uk/rbf/FORUMTRACKING/
+    """
+    (_, whole_file), index = filename_content_index
+
+    for line in whole_file.splitlines():
+        line = line.split(",")
+        track_id = line[1]
+        track_id = int(track_id) + index * 1000000
+
+        x = line[2]
+        y = line[3]
+        frame = int(float(line[0]) * 10)
+        yield TrackRow(frame, track_id, float(x) * 0.0247, float(y) * 0.0247)
+
+
 def syi(filename_content):
     """Tracking dataset in Grand Central.
 
