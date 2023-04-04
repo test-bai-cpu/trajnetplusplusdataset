@@ -208,6 +208,142 @@ def edit_goal_file(old_filename, new_filename):
     shutil.copy("goal_files/val/" + old_filename, "goal_files/val/" + new_filename)
     shutil.copy("goal_files/test_private/" + old_filename, "goal_files/test_private/" + new_filename)
 
+def main_example():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--obs_len', type=int, default=8,
+                        help='Length of observation')
+    parser.add_argument('--pred_len', type=int, default=12,
+                        help='Length of prediction')
+    parser.add_argument('--train_fraction', default=0.6, type=float,
+                        help='Training set fraction')
+    parser.add_argument('--val_fraction', default=0.2, type=float,
+                        help='Validation set fraction')
+    parser.add_argument('--fps', default=2.5, type=float,
+                        help='fps')
+    parser.add_argument('--order_frames', action='store_true',
+                        help='For CFF')
+    parser.add_argument('--chunk_stride', type=int, default=2,
+                        help='Sampling Stride')
+    parser.add_argument('--min_length', default=0.0, type=float,
+                        help='Min Length of Primary Trajectory')
+    parser.add_argument('--synthetic', action='store_true',
+                        help='convert synthetic datasets (if false, convert real)')
+    parser.add_argument('--all_present', action='store_true',
+                        help='filter scenes where all pedestrians present at all times')
+    parser.add_argument('--goal_file', default=None,
+                        help='Pkl file for goals (required for ORCA sensitive scene filtering)')
+    parser.add_argument('--mode', default='default', choices=('default', 'trajnet'),
+                        help='mode of ORCA scene generation (required for ORCA sensitive scene filtering)')
+
+    ## For Trajectory categorizing and filtering
+    categorizers = parser.add_argument_group('categorizers')
+    categorizers.add_argument('--static_threshold', type=float, default=1.0,
+                              help='Type I static threshold')
+    categorizers.add_argument('--linear_threshold', type=float, default=0.5,
+                              help='Type II linear threshold (0.3 for Synthetic)')
+    categorizers.add_argument('--inter_dist_thresh', type=float, default=5,
+                              help='Type IIId distance threshold for cone')
+    categorizers.add_argument('--inter_pos_range', type=float, default=15,
+                              help='Type IIId angle threshold for cone (degrees)')
+    categorizers.add_argument('--grp_dist_thresh', type=float, default=0.8,
+                              help='Type IIIc distance threshold for group')
+    categorizers.add_argument('--grp_std_thresh', type=float, default=0.2,
+                              help='Type IIIc std deviation for group')
+    categorizers.add_argument('--acceptance', nargs='+', type=float, default=[0.1, 1, 1, 1],
+                              help='acceptance ratio of different trajectory (I, II, III, IV) types')
+
+    args = parser.parse_args()
+    sc = pysparkling.Context()
+
+    # Real datasets conversion (eg. ETH)
+    #########################
+    ## Training Set
+    #########################
+    args.train_fraction = 1.0
+    args.val_fraction = 0.0
+
+    ## Biwi
+    write(standard(sc, 'data/eth/train/biwi_hotel_train.txt'),
+          'output_pre/{split}/biwi_hotel_train.ndjson', args)
+    categorize(sc, 'output_pre/{split}/biwi_hotel_train.ndjson', args)
+
+    ## Crowds Zara
+    write(standard(sc, 'data/eth/train/crowds_zara02_train.txt '),
+          'output_pre/{split}/crowds_zara02_train.ndjson', args)
+    categorize(sc, 'output_pre/{split}/crowds_zara02_train.ndjson', args)
+
+    write(standard(sc, 'data/eth/train/crowds_zara01_train.txt '),
+          'output_pre/{split}/crowds_zara01_train.ndjson', args)
+    categorize(sc, 'output_pre/{split}/crowds_zara01_train.ndjson', args)
+
+    write(standard(sc, 'data/eth/train/crowds_zara03_train.txt '),
+          'output_pre/{split}/crowds_zara03_train.ndjson', args)
+    categorize(sc, 'output_pre/{split}/crowds_zara03_train.ndjson', args)
+
+    ## Crowds Uni
+    write(standard(sc, 'data/eth/train/students001_train.txt '),
+          'output_pre/{split}/students001_train.ndjson', args)
+    categorize(sc, 'output_pre/{split}/students001_train.ndjson', args)
+
+    write(standard(sc, 'data/eth/train/uni_examples_train.txt '),
+          'output_pre/{split}/uni_examples_train.ndjson', args)
+    categorize(sc, 'output_pre/{split}/uni_examples_train.ndjson', args)
+
+    write(standard(sc, 'data/eth/train/students003_train.txt '),
+          'output_pre/{split}/students003_train.ndjson', args)
+    categorize(sc, 'output_pre/{split}/students003_train.ndjson', args)
+
+    #########################
+    ## Validation Set
+    #########################
+    args.train_fraction = 0.0
+    args.val_fraction = 1.0
+
+    ## Biwi
+    write(standard(sc, 'data/eth/val/biwi_hotel_val.txt'),
+          'output_pre/{split}/biwi_hotel_val.ndjson', args)
+    categorize(sc, 'output_pre/{split}/biwi_hotel_val.ndjson', args)
+
+    ## Crowds Zara
+    write(standard(sc, 'data/eth/val/crowds_zara02_val.txt '),
+          'output_pre/{split}/crowds_zara02_val.ndjson', args)
+    categorize(sc, 'output_pre/{split}/crowds_zara02_val.ndjson', args)
+
+    write(standard(sc, 'data/eth/val/crowds_zara01_val.txt '),
+          'output_pre/{split}/crowds_zara01_val.ndjson', args)
+    categorize(sc, 'output_pre/{split}/crowds_zara01_val.ndjson', args)
+
+    write(standard(sc, 'data/eth/val/crowds_zara03_val.txt '),
+          'output_pre/{split}/crowds_zara03_val.ndjson', args)
+    categorize(sc, 'output_pre/{split}/crowds_zara03_val.ndjson', args)
+
+    ## Crowds Uni
+    write(standard(sc, 'data/eth/val/students001_val.txt '),
+          'output_pre/{split}/students001_val.ndjson', args)
+    categorize(sc, 'output_pre/{split}/students001_val.ndjson', args)
+
+    write(standard(sc, 'data/eth/val/uni_examples_val.txt '),
+          'output_pre/{split}/uni_examples_val.ndjson', args)
+    categorize(sc, 'output_pre/{split}/uni_examples_val.ndjson', args)
+
+    write(standard(sc, 'data/eth/val/students003_val.txt '),
+          'output_pre/{split}/students003_val.ndjson', args)
+    categorize(sc, 'output_pre/{split}/students003_val.ndjson', args)
+
+    #########################
+    ## Testing Set
+    #########################
+    args.train_fraction = 0.0
+    args.val_fraction = 0.0
+    args.acceptance = [1.0, 1.0, 1.0, 1.0]
+    args.chunk_stride = 1
+
+    ## ETH
+    write(standard(sc, 'data/eth/test/biwi_eth.txt '),
+          'output_pre/{split}/biwi_eth.ndjson', args)
+    categorize(sc, 'output_pre/{split}/biwi_eth.ndjson', args)
+
+
 def main(train_date_list, val_date_list, test_date_list):
     parser = argparse.ArgumentParser()
     parser.add_argument('--obs_len', type=int, default=8,
@@ -253,8 +389,6 @@ def main(train_date_list, val_date_list, test_date_list):
                               help='acceptance ratio of different trajectory (I, II, III, IV) types')
 
     args = parser.parse_args()
-    # args.chunk_stride = int(args.pred_len / 4 * 3)
-    args.chunk_stride = 2
     sc = pysparkling.Context()
 
     # Real datasets conversion (eg. ETH)
@@ -264,13 +398,14 @@ def main(train_date_list, val_date_list, test_date_list):
     args.train_fraction = 1.0
     args.val_fraction = 0.0
 
-    print("prepare train datasets:")
+      print("prepare train datasets:")
+
     for train_date in train_date_list:
-        print("---------------------------------")
-        print(train_date)
-        write(edinburgh_myedinfile(sc, "data/edinburgh-filter-bad/" + train_date + ".csv"),
-            "output_pre/{split}/" + train_date + ".ndjson", args)
+        print()
+        write(edinburgh_myedinfile(sc, "data/edinburgh/" + train_date + ".csv"),
+              "output_pre/{split}/" + train_date + ".ndjson", args)
         categorize(sc, "output_pre/{split}/" + train_date + ".ndjson", args)
+
 
 #     #########################
 #     ## Validation Set
@@ -278,13 +413,10 @@ def main(train_date_list, val_date_list, test_date_list):
     args.train_fraction = 0.0
     args.val_fraction = 1.0
 
-    print("prepare val datasets:")
     for val_date in val_date_list:
-        print("---------------------------------")
-        print(val_date)
-        write(edinburgh_myedinfile(sc, "data/edinburgh-filter-bad/" + val_date + ".csv"),
+      write(edinburgh_myedinfile(sc, "data/edinburgh/" + val_date + ".csv"),
             "output_pre/{split}/" + val_date + ".ndjson", args)
-        categorize(sc, "output_pre/{split}/" + val_date + ".ndjson", args)
+      categorize(sc, "output_pre/{split}/" + val_date + ".ndjson", args)
 
 #     #########################
 #     ## Testing Set
@@ -293,21 +425,12 @@ def main(train_date_list, val_date_list, test_date_list):
     args.val_fraction = 0.0
     # here means not use type I data for training and val, but can use them for test.
     args.acceptance = [1.0, 1.0, 1.0, 1.0]
-    # args.chunk_stride = 2
-    # args.chunk_stride = int(args.pred_len / 4 * 3)
-    args.chunk_stride = 100
+    args.chunk_stride = 2
 
-    print("prepare test datasets:")
     for test_date in test_date_list:
-        print("---------------------------------")
-        print(test_date)
-        write(edinburgh_myedinfile(sc, "data/edinburgh-filter-bad/" + test_date + ".csv"),
+      write(edinburgh_myedinfile(sc, "data/edinburgh/" + test_date + ".csv"),
             "output_pre/{split}/" + test_date + ".ndjson", args)
-        categorize(sc, "output_pre/{split}/" + test_date + ".ndjson", args)
+      categorize(sc, "output_pre/{split}/" + test_date + ".ndjson", args)
 
 if __name__ == '__main__':
-    train_date_list = ["0922"]
-    val_date_list = ["0923"]
-    test_date_list = ["0929", "0930", "1006", "1007", "1013", "1014"]
-
-    main(train_date_list, val_date_list, test_date_list)
+    main()
