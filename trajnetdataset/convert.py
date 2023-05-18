@@ -1,6 +1,8 @@
 """Create Trajnet data from original datasets."""
 import argparse
 import shutil
+import numpy as np
+import random
 
 import pysparkling
 import scipy.io
@@ -133,6 +135,13 @@ def standard(sc, input_file):
     return (sc
             .textFile(input_file)
             .map(readers.standard)
+            .cache())
+
+def car_data(sc, input_file):
+    print('processing ' + input_file)
+    return (sc
+            .wholeTextFiles(input_file)
+            .flatMap(readers.car_data)
             .cache())
 
 def write(input_rows, output_file, args):
@@ -435,10 +444,16 @@ def main_atc_long_traj_train():
                         help='Min Length of Primary Trajectory')
     parser.add_argument('--synthetic', action='store_true',
                         help='convert synthetic datasets (if false, convert real)')
+    parser.add_argument('--direct', action='store_true',
+                        help='directy convert synthetic datasets using commandline')
     parser.add_argument('--all_present', action='store_true',
                         help='filter scenes where all pedestrians present at all times')
+    parser.add_argument('--orca_file', default=None,
+                        help='Txt file for ORCA trajectories, required in direct mode')
     parser.add_argument('--goal_file', default=None,
                         help='Pkl file for goals (required for ORCA sensitive scene filtering)')
+    parser.add_argument('--output_filename', default=None,
+                        help='name of the output dataset filename constructed in .ndjson format, required in direct mode')
     parser.add_argument('--mode', default='default', choices=('default', 'trajnet'),
                         help='mode of ORCA scene generation (required for ORCA sensitive scene filtering)')
     parser.add_argument('--train_atc_file', default=None, type=str, help='atc file for training phase')
