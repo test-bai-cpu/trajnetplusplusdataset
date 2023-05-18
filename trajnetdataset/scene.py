@@ -67,40 +67,45 @@ class Scenes(object):
 
         ########################## FOR OUR CASE: scene even with only one pedestrian ##########################
 
+        ######## Very important, for debugging RDD ########
+        # def f(path):
+        #     print("lenpath: ", len(path), " chunk size: ", self.chunk_size)
+        #     print(self.chunk_stride)
+        #     return path
+        # rows1 = (
+        #     rows
+        #     .groupBy(lambda r: r.pedestrian)
+        #     .filter(lambda p_path: len(p_path[1]) >= self.chunk_size)
+        #     .mapValues(lambda path: sorted(path, key=lambda p: p.frame))
+        #     .flatMapValues(f)
+        #     )
+        # print(rows1.collect())
+        ####################################################
+        
+        
         # scenes: pedestrian of interest, [frames]
         scenes = (
             rows
             .groupBy(lambda r: r.pedestrian)
-            .filter(lambda p_path: len(p_path[1]) >= self.chunk_size)
+            # .filter(lambda p_path: len(p_path[1]) >= self.chunk_size)
             .mapValues(lambda path: sorted(path, key=lambda p: p.frame))
             .flatMapValues(lambda path: [
                 [path[ii].frame for ii in range(i, i + self.chunk_size)]
                 for i in range(0, len(path) - self.chunk_size + 1, self.chunk_stride)
-                # filter for pedestrians moving by more than min_length meter
-                if self.euclidean_distance_2(path[i], path[i+self.chunk_size-1]) > self.min_length
             ])
-
-            # filter out scenes with large gaps in frame numbers
-            .filter(lambda ped_frames: self.continuous_frames(ped_frames[1]))
-
-            # filter for scenes that have some activity
-            # .filter(lambda ped_frames:
-            #         sum(count_by_frame[f] for f in ped_frames[1]) >= 2.0 * self.chunk_size)
-
             # require some proximity to other pedestrians
             # Modification: only check proximity when there are more than one pedestrian in the scene
-            .filter(lambda ped_frames:
-                    not(
-                    sum(count_by_frame[f] for f in ped_frames[1]) >= 2.0 * self.chunk_size
-                    and
-                    not(
-                    ped_frames[0] in {p
-                                      for frame in ped_frames[1]
-                                      for p in occupancy_by_frame[frame]}              
-                    )
-                    )
-                    )
-
+            # .filter(lambda ped_frames:
+            #         not(
+            #         sum(count_by_frame[f] for f in ped_frames[1]) >= 2.0 * self.chunk_size
+            #         and
+            #         not(
+            #         ped_frames[0] in {p
+            #                           for frame in ped_frames[1]
+            #                           for p in occupancy_by_frame[frame]}              
+            #         )
+            #         )
+            #         )
             .cache()
         )
 
@@ -133,7 +138,6 @@ class Scenes(object):
 
         #     .cache()
         # )
-
 
         self.frames |= set(scenes
                            .flatMap(lambda ped_frames:

@@ -66,6 +66,15 @@ def edinburgh(sc, input_file):
             .cache())
 
 
+def atc_myfile(sc, input_file):
+    print('processing ' + input_file)
+    return (sc
+            .wholeTextFiles(input_file)
+            .zipWithIndex()
+            .flatMap(readers.atc_myfile)
+            .cache())
+
+
 def syi(sc, input_file):
     print('processing ' + input_file)
     return (sc
@@ -208,7 +217,7 @@ def edit_goal_file(old_filename, new_filename):
     shutil.copy("goal_files/val/" + old_filename, "goal_files/val/" + new_filename)
     shutil.copy("goal_files/test_private/" + old_filename, "goal_files/test_private/" + new_filename)
 
-def main(train_date_list, val_date_list, test_date_list):
+def main_edin(train_date_list, val_date_list, test_date_list):
     parser = argparse.ArgumentParser()
     parser.add_argument('--obs_len', type=int, default=8,
                         help='Length of observation')
@@ -222,7 +231,7 @@ def main(train_date_list, val_date_list, test_date_list):
                         help='fps')
     parser.add_argument('--order_frames', action='store_true',
                         help='For CFF')
-    parser.add_argument('--chunk_stride', type=int, default=2,
+    parser.add_argument('--chunk_stride', type=int, default=10**100,
                         help='Sampling Stride')
     parser.add_argument('--min_length', default=0.0, type=float,
                         help='Min Length of Primary Trajectory')
@@ -254,7 +263,7 @@ def main(train_date_list, val_date_list, test_date_list):
 
     args = parser.parse_args()
     # args.chunk_stride = int(args.pred_len / 4 * 3)
-    args.chunk_stride = 2
+    args.chunk_stride = int(10**10)
     sc = pysparkling.Context()
 
     # Real datasets conversion (eg. ETH)
@@ -268,8 +277,9 @@ def main(train_date_list, val_date_list, test_date_list):
     for train_date in train_date_list:
         print("---------------------------------")
         print(train_date)
-        write(edinburgh_myedinfile(sc, "data/edinburgh-filter-bad/" + train_date + ".csv"),
+        write(edinburgh_myedinfile(sc, "data/edinburgh-reframe/" + train_date + ".csv"),
             "output_pre/{split}/" + train_date + ".ndjson", args)
+        print("-----check1---------")
         categorize(sc, "output_pre/{split}/" + train_date + ".ndjson", args)
 
 #     #########################
@@ -282,7 +292,7 @@ def main(train_date_list, val_date_list, test_date_list):
     for val_date in val_date_list:
         print("---------------------------------")
         print(val_date)
-        write(edinburgh_myedinfile(sc, "data/edinburgh-filter-bad/" + val_date + ".csv"),
+        write(edinburgh_myedinfile(sc, "data/edinburgh-reframe/" + val_date + ".csv"),
             "output_pre/{split}/" + val_date + ".ndjson", args)
         categorize(sc, "output_pre/{split}/" + val_date + ".ndjson", args)
 
@@ -295,19 +305,268 @@ def main(train_date_list, val_date_list, test_date_list):
     args.acceptance = [1.0, 1.0, 1.0, 1.0]
     # args.chunk_stride = 2
     # args.chunk_stride = int(args.pred_len / 4 * 3)
-    args.chunk_stride = 100
+    args.chunk_stride = int(10**100)
 
     print("prepare test datasets:")
     for test_date in test_date_list:
         print("---------------------------------")
         print(test_date)
-        write(edinburgh_myedinfile(sc, "data/edinburgh-filter-bad/" + test_date + ".csv"),
+        write(edinburgh_myedinfile(sc, "data/edinburgh-reframe/" + test_date + ".csv"),
             "output_pre/{split}/" + test_date + ".ndjson", args)
         categorize(sc, "output_pre/{split}/" + test_date + ".ndjson", args)
 
-if __name__ == '__main__':
-    train_date_list = ["0922"]
-    val_date_list = ["0923"]
-    test_date_list = ["0929", "0930", "1006", "1007", "1013", "1014"]
 
-    main(train_date_list, val_date_list, test_date_list)
+
+def main_atc(train_date_list, val_date_list, test_date_list=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--obs_len', type=int, default=8,
+                        help='Length of observation')
+    parser.add_argument('--pred_len', type=int, default=12,
+                        help='Length of prediction')
+    parser.add_argument('--train_fraction', default=0.6, type=float,
+                        help='Training set fraction')
+    parser.add_argument('--val_fraction', default=0.2, type=float,
+                        help='Validation set fraction')
+    parser.add_argument('--fps', default=2.5, type=float,
+                        help='fps')
+    parser.add_argument('--order_frames', action='store_true',
+                        help='For CFF')
+    parser.add_argument('--chunk_stride', type=int, default=1000000,
+                        help='Sampling Stride')
+    parser.add_argument('--min_length', default=0.0, type=float,
+                        help='Min Length of Primary Trajectory')
+    parser.add_argument('--synthetic', action='store_true',
+                        help='convert synthetic datasets (if false, convert real)')
+    parser.add_argument('--all_present', action='store_true',
+                        help='filter scenes where all pedestrians present at all times')
+    parser.add_argument('--goal_file', default=None,
+                        help='Pkl file for goals (required for ORCA sensitive scene filtering)')
+    parser.add_argument('--mode', default='default', choices=('default', 'trajnet'),
+                        help='mode of ORCA scene generation (required for ORCA sensitive scene filtering)')
+    parser.add_argument('--train_atc_file', type=str, help='atc file for training phase')
+
+    ## For Trajectory categorizing and filtering
+    categorizers = parser.add_argument_group('categorizers')
+    categorizers.add_argument('--static_threshold', type=float, default=1.0,
+                              help='Type I static threshold')
+    categorizers.add_argument('--linear_threshold', type=float, default=0.5,
+                              help='Type II linear threshold (0.3 for Synthetic)')
+    categorizers.add_argument('--inter_dist_thresh', type=float, default=5,
+                              help='Type IIId distance threshold for cone')
+    categorizers.add_argument('--inter_pos_range', type=float, default=15,
+                              help='Type IIId angle threshold for cone (degrees)')
+    categorizers.add_argument('--grp_dist_thresh', type=float, default=0.8,
+                              help='Type IIIc distance threshold for group')
+    categorizers.add_argument('--grp_std_thresh', type=float, default=0.2,
+                              help='Type IIIc std deviation for group')
+    categorizers.add_argument('--acceptance', nargs='+', type=float, default=[0.1, 1, 1, 1],
+                              help='acceptance ratio of different trajectory (I, II, III, IV) types')
+
+    args = parser.parse_args()
+    # args.chunk_stride = int(args.pred_len / 4 * 3)
+    # args.chunk_stride = int(10**100)
+    args.chunk_stride = int(args.pred_len / 4 * 3)
+    sc = pysparkling.Context()
+
+    #########################
+    ## Training Set
+    #########################
+    args.train_fraction = 1.0
+    args.val_fraction = 0.0
+
+    print("prepare train datasets:")
+    for train_date in train_date_list:
+        print("---------------------------------")
+        print(train_date)
+        write(atc_myfile(sc, "data/atc-train-1024-long/train/" + train_date + ".csv"),
+            "output_pre/{split}/" + train_date + ".ndjson", args)
+        categorize(sc, "output_pre/{split}/" + train_date + ".ndjson", args)
+
+#     #########################
+#     ## Validation Set
+#     #########################
+    args.train_fraction = 0.0
+    args.val_fraction = 1.0
+
+    print("prepare val datasets:") 
+    for val_date in val_date_list:
+        print("---------------------------------")
+        print(val_date)
+        write(atc_myfile(sc, "data/atc-train-1024-long/val/" + val_date + ".csv"),
+            "output_pre/{split}/" + val_date + ".ndjson", args)
+        categorize(sc, "output_pre/{split}/" + val_date + ".ndjson", args)
+
+    #########################
+    ## Testing Set
+    #########################
+    # args.train_fraction = 0.0
+    # args.val_fraction = 0.0
+    # # here means not use type I data for training and val, but can use them for test.
+    # args.acceptance = [1.0, 1.0, 1.0, 1.0]
+    # # args.chunk_stride = 2
+    # # args.chunk_stride = int(args.pred_len / 4 * 3)
+    # args.chunk_stride = int(10**100)
+
+    # print("prepare test datasets:")
+    # for test_date in test_date_list:
+    #     print("---------------------------------")
+    #     print(test_date)
+    #     write(atc_myfile(sc, "data/1024/" + test_date + ".csv"),
+    #         "output_pre/{split}/" + test_date + ".ndjson", args)
+    #     categorize(sc, "output_pre/{split}/" + test_date + ".ndjson", args)
+
+def main_atc_long_traj_train():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--obs_len', type=int, default=8,
+                        help='Length of observation')
+    parser.add_argument('--pred_len', type=int, default=12,
+                        help='Length of prediction')
+    parser.add_argument('--train_fraction', default=0.6, type=float,
+                        help='Training set fraction')
+    parser.add_argument('--val_fraction', default=0.2, type=float,
+                        help='Validation set fraction')
+    parser.add_argument('--fps', default=2.5, type=float,
+                        help='fps')
+    parser.add_argument('--order_frames', action='store_true',
+                        help='For CFF')
+    parser.add_argument('--chunk_stride', type=int, default=2,
+                        help='Sampling Stride')
+    parser.add_argument('--min_length', default=0.0, type=float,
+                        help='Min Length of Primary Trajectory')
+    parser.add_argument('--synthetic', action='store_true',
+                        help='convert synthetic datasets (if false, convert real)')
+    parser.add_argument('--all_present', action='store_true',
+                        help='filter scenes where all pedestrians present at all times')
+    parser.add_argument('--goal_file', default=None,
+                        help='Pkl file for goals (required for ORCA sensitive scene filtering)')
+    parser.add_argument('--mode', default='default', choices=('default', 'trajnet'),
+                        help='mode of ORCA scene generation (required for ORCA sensitive scene filtering)')
+    parser.add_argument('--train_atc_file', default=None, type=str, help='atc file for training phase')
+    parser.add_argument('--batch_str', default=None, type=str, help='batch number for multi random sets')
+
+    ## For Trajectory categorizing and filtering
+    categorizers = parser.add_argument_group('categorizers')
+    categorizers.add_argument('--static_threshold', type=float, default=1.0,
+                              help='Type I static threshold')
+    categorizers.add_argument('--linear_threshold', type=float, default=0.5,
+                              help='Type II linear threshold (0.3 for Synthetic)')
+    categorizers.add_argument('--inter_dist_thresh', type=float, default=5,
+                              help='Type IIId distance threshold for cone')
+    categorizers.add_argument('--inter_pos_range', type=float, default=15,
+                              help='Type IIId angle threshold for cone (degrees)')
+    categorizers.add_argument('--grp_dist_thresh', type=float, default=0.8,
+                              help='Type IIIc distance threshold for group')
+    categorizers.add_argument('--grp_std_thresh', type=float, default=0.2,
+                              help='Type IIIc std deviation for group')
+    categorizers.add_argument('--acceptance', nargs='+', type=float, default=[0.1, 1, 1, 1],
+                              help='acceptance ratio of different trajectory (I, II, III, IV) types')
+
+    args = parser.parse_args()
+    # args.chunk_stride = int(args.pred_len / 4 * 3)
+    # args.chunk_stride = int(10**100)
+    args.chunk_stride = int(args.pred_len / 4 * 3)
+    sc = pysparkling.Context()
+
+    #########################
+    ## Training Set
+    #########################
+    args.train_fraction = 1.0
+    args.val_fraction = 0.0
+
+    print("prepare train datasets:")
+    print("---------------------------------")
+
+    # file_name = "data/atc-long-traj-train-frame/" + args.batch_str + "/train/" + args.train_atc_file + ".csv"
+    file_name = "data/atc-train-1024-long/train/" + args.train_atc_file + ".csv"
+    write(atc_myfile(sc, file_name),
+        "output_pre/{split}/" + args.train_atc_file + ".ndjson", args)
+    categorize(sc, "output_pre/{split}/" + args.train_atc_file + ".ndjson", args)
+
+# #     #########################
+# #     ## Validation Set
+# #     #########################
+    args.train_fraction = 0.0
+    args.val_fraction = 1.0
+
+    print("prepare val datasets:") 
+    print("---------------------------------")
+    
+    # file_name = "data/atc-long-traj-train-frame/" + args.batch_str + "/val/" + args.train_atc_file + ".csv"
+    file_name = "data/atc-train-1024-long/val/" + args.train_atc_file + ".csv"
+    write(atc_myfile(sc, file_name),
+        "output_pre/{split}/" + args.train_atc_file + ".ndjson", args)
+    categorize(sc, "output_pre/{split}/" + args.train_atc_file + ".ndjson", args)
+    #########################
+    ## Testing Set
+    #########################
+    # args.train_fraction = 0.0
+    # args.val_fraction = 0.0
+    # # here means not use type I data for training and val, but can use them for test.
+    # args.acceptance = [1.0, 1.0, 1.0, 1.0]
+    # # args.chunk_stride = 2
+    # # args.chunk_stride = int(args.pred_len / 4 * 3)
+    # args.chunk_stride = int(10**100)
+
+    # print("prepare test datasets:")
+    # for test_date in ["1028", "1031", "1104"]:
+    # # for test_date in ["1028"]:
+    #     print("---------------------------------")
+    #     print(test_date)
+    #     # for split_num in range(1, 11):
+    #     # for split_num in range(1):
+    #     #     write(atc_myfile(sc, "data/atc-long-traj-train-frame/test-split/" + test_date + "-" + str(split_num) + ".csv"),
+    #     #         "output_pre/{split}/" + test_date + "-" + str(split_num) + ".ndjson", args)
+    #     #     categorize(sc, "output_pre/{split}/" + test_date + "-" + str(split_num) + ".ndjson", args)
+        
+    #     write(atc_myfile(sc, "data/atc-test/" + test_date + "-60.csv"),
+    #         "output_pre/{split}/" + test_date + ".ndjson", args)
+    #     categorize(sc, "output_pre/{split}/" + test_date + ".ndjson", args)
+        
+
+if __name__ == '__main__':
+    
+    ############################# EDIN #############################
+    # all_dates = ["0106", "0107", "0111", "0113", "0114", "0115", "0118", "0119",
+    #             "0603", "0604", "0614", "0616", "0618", "0624", "0625", "0629", "0630", 
+    #             "0701", "0712", "0719", "0722", "0726", "0730",
+    #             "0826", "0827", "0828",
+    #             "0901", "0902", "0904", "0910", "0911", "0916", "0918", "0922", "0923", "0928", "0929", "0930",
+    #             "1002", "1006", "1007", "1008", "1009",
+    #             "1215", "1216"]
+    # train_date_list = ["0106", "0107", "0111"]
+    # val_date_list = ["0113", "0114"]
+    
+    
+    # # train_date_list = ["0106"]
+    # # val_date_list = ["0113"]
+    # # test_date_list = ["0115"]
+    # test_date_list = ["0115", "0118", "0119",
+    #                 "0603", "0604", "0614", "0616", "0618", "0624", "0625", "0629", "0630", 
+    #                 "0701", "0712", "0719", "0722", "0726", "0730",
+    #                 "0826", "0827", "0828",
+    #                 "0901", "0902", "0904", "0910", "0911", "0916", "0918", "0922", "0923", "0928", "0929", "0930",
+    #                 "1002", "1006", "1007", "1008", "1009",
+    #                 "1215", "1216"]
+    # # test_date_list = ["0115"]
+
+    # main_edin(train_date_list, val_date_list, test_date_list)
+    #################################################################
+
+
+
+    ############################# ATC #############################
+    all_dates = ["1024", "1028", "1031", "1104"]
+    # train_date_list = ["1024-train"]
+    # val_date_list = ["1024-val"]
+    # test_date_list = ["1028", "1031", "1104"]
+    
+    train_date_list = ["1024-" + str(bn) for bn in range(1,11)]
+    val_date_list = ["1024-" + str(bn) for bn in range(1,11)]
+    # test_date_list = ["1024-3"]
+
+    main_atc(train_date_list, val_date_list)
+    #################################################################
+    
+    ############################# ATC workshop: long traj train #####
+    # main_atc_long_traj_train()
+    #################################################################
